@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from "react";
+import SaveButton from "./components/SaveButton";
 import {
   Editor,
   EditorState,
@@ -6,73 +7,95 @@ import {
   convertToRaw,
   convertFromRaw,
   Modifier,
-} from 'draft-js';
-import 'draft-js/dist/Draft.css';
+} from "draft-js";
+import "draft-js/dist/Draft.css";
 
-const EditorComponent = ({ initialContent, onSave }) => {
-  const [editorState, setEditorState] = useState(
-    initialContent
-      ? EditorState.createWithContent(convertFromRaw(initialContent))
-      : EditorState.createEmpty()
-      
-  );
-  const [activeStyle, setActiveStyle] = useState(null);
-  console.log('initialContent:', initialContent)
-  console.log('editorState:', editorState)
-  // Custom inline style map for styling
+const EditorComponent = () => {
+  const [editorState, setEditorState] = useState(() => {
+    const savedContent = localStorage.getItem("editorContent");
+    return savedContent
+      ? EditorState.createWithContent(convertFromRaw(JSON.parse(savedContent)))
+      : EditorState.createEmpty();
+  });
+
   const styleMap = {
     REDLINE: {
-      color: 'red',
-  
+      color: "red",
     },
     UNDERLINE: {
-      textDecoration: 'underline',
+      textDecoration: "underline",
     },
+    BOLD: {
+      fontWeight: "bold",
+    },
+  };
+
+  const handleSave = () => {
+    const content = convertToRaw(editorState.getCurrentContent());
+    localStorage.setItem("editorContent", JSON.stringify(content));
+    alert("Content saved!");
   };
 
   const handleKeyCommand = (command, state) => {
     const newState = RichUtils.handleKeyCommand(state, command);
     if (newState) {
       setEditorState(newState);
-      return 'handled';
+      return "handled";
     }
-    return 'not-handled';
+    return "not-handled";
+  };
+
+  const handleReturn = (e, state) => {
+    const contentState = state.getCurrentContent();
+    const selectionState = state.getSelection();
+
+    const updatedContent = Modifier.splitBlock(contentState, selectionState);
+
+    const newState = EditorState.push(
+      state,
+      updatedContent,
+      "split-block"
+    );
+
+    const clearedState = EditorState.setInlineStyleOverride(
+      newState,
+      new Set()
+    );
+
+    setEditorState(EditorState.forceSelection(clearedState, clearedState.getSelection()));
+    return "handled";
   };
 
   const handleBeforeInput = (chars, state) => {
     const contentState = state.getCurrentContent();
     const selectionState = state.getSelection();
-    const currentBlock = contentState.getBlockForKey(selectionState.getStartKey());
+    const currentBlock = contentState.getBlockForKey(
+      selectionState.getStartKey()
+    );
     const text = currentBlock.getText();
 
-    // Handle different cases for #, *, **, and ***
     switch (true) {
-      case text.startsWith('#') && chars === ' ':
-        applyBlockStyle(state, 'header-one', text, 1);
-        console.log('header')
-        return 'handled';
+      case text.startsWith("#") && chars === " ":
+        applyBlockStyle(state, "header-one", text, 1);
+        return "handled";
 
-      case text.startsWith('*') && !text.startsWith('**') && chars === ' ':
-        applyInlineStyle(state, 'BOLD', text, 1);
-        console.log('bold')
-        return 'handled';
+      case text.startsWith("*") && !text.startsWith("**") && chars === " ":
+        applyInlineStyle(state, "BOLD", text, 1);
+        return "handled";
 
-      case text.startsWith('**') && !text.startsWith('***') && chars === ' ':
-        applyInlineStyle(state, 'REDLINE', text, 2);
-        console.log('redline')
-        return 'handled';
+      case text.startsWith("**") && !text.startsWith("***") && chars === " ":
+        applyInlineStyle(state, "REDLINE", text, 2);
+        return "handled";
 
-      case text.startsWith('***') && chars === ' ':
-        applyInlineStyle(state, 'UNDERLINE', text, 3);
-        console.log('underline')
-        return 'handled';
+      case text.startsWith("***") && chars === " ":
+        applyInlineStyle(state, "UNDERLINE", text, 3);
+        return "handled";
 
       default:
-        return 'not-handled';
+        return "not-handled";
     }
   };
 
-  // Helper function to apply block style
   const applyBlockStyle = (state, blockType, text, symbolLength) => {
     const contentState = state.getCurrentContent();
     const selectionState = state.getSelection();
@@ -90,15 +113,33 @@ const EditorComponent = ({ initialContent, onSave }) => {
     const newState = EditorState.push(
       state,
       contentWithoutSymbol,
-      'change-block-type'
+      "change-block-type"
     );
     setEditorState(RichUtils.toggleBlockType(newState, blockType));
   };
 
-  // Helper function to apply inline style
-  const applyInlineStyle = (state, style, text, symbolLength) => {
+  const clearInlineStyles = (state) => {
     const contentState = state.getCurrentContent();
     const selectionState = state.getSelection();
+    const currentStyle = state.getCurrentInlineStyle();
+
+    let newContentState = contentState;
+    currentStyle.forEach((style) => {
+      newContentState = Modifier.removeInlineStyle(
+        newContentState,
+        selectionState,
+        style
+      );
+    });
+
+    return EditorState.push(state, newContentState, "change-inline-style");
+  };
+
+  const applyInlineStyle = (state, style, text, symbolLength) => {
+    const clearedState = clearInlineStyles(state);
+
+    const contentState = clearedState.getCurrentContent();
+    const selectionState = clearedState.getSelection();
 
     const withoutSymbol = text.slice(symbolLength).trim();
     const contentWithoutSymbol = Modifier.replaceText(
@@ -111,32 +152,28 @@ const EditorComponent = ({ initialContent, onSave }) => {
     );
 
     const newState = EditorState.push(
-      state,
+      clearedState,
       contentWithoutSymbol,
-      'change-inline-style'
+      "change-inline-style"
     );
     setEditorState(RichUtils.toggleInlineStyle(newState, style));
   };
 
-  const handleSave = () => {
-    const content = convertToRaw(editorState.getCurrentContent());
-    onSave(content);
-  };
-
   return (
-    <div style={{ border: '1px solid #ccc', padding: '10px' }}>
-      <div style={{ marginBottom: '10px' }}>
-        <button onClick={handleSave} style={{ padding: '5px 10px', cursor: 'pointer' }}>
-          Save
-        </button>
+    <div style={{ border: "1px solid #507dad", padding: "10px" }}>
+     <div style={{ marginBottom: "10px" }}>
+        <SaveButton onClick={handleSave} />
       </div>
       <Editor
         editorState={editorState}
         onChange={setEditorState}
+        customStyleMap={styleMap}
         handleKeyCommand={handleKeyCommand}
         handleBeforeInput={handleBeforeInput}
-        customStyleMap={styleMap}
+        handleReturn={(e) => handleReturn(e, editorState)}
         placeholder="Type here..."
+        
+      
       />
     </div>
   );
