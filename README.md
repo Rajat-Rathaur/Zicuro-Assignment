@@ -13,5 +13,11 @@ First git clone the project
 Runs the app in the development mode.\
 Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
 
+### live on 
+Open [https://zicuro-assignment-eight.vercel.app/](https://zicuro-assignment-eight.vercel.app/)
+
+
+![image](https://github.com/user-attachments/assets/b47b1713-14cb-4d83-9337-edd16d3e7fcd)
+
 
 
